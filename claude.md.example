@@ -1,0 +1,87 @@
+# PolarNet 项目 CLAUDE.md 示例
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This is **PolarNet** (CVPR 2020) - an online LiDAR point cloud semantic segmentation network. The codebase is organized as follows:
+
+- `PolarSeg-master/` - Main project directory containing training/inference code
+- Root directory - Custom inference scripts and utilities for this specific deployment
+
+## Common Commands
+
+### Training
+```bash
+# Train on SemanticKITTI (default: polar model with grid [480,360,32])
+python PolarSeg-master/train_SemanticKITTI.py
+
+# With custom settings
+python PolarSeg-master/train_SemanticKITTI.py --data_dir ./data --model polar --grid_size 480 360 32 --train_batch_size 2
+
+# Traditional (cartesian) model
+python PolarSeg-master/train_SemanticKITTI.py --model traditional
+```
+
+### Evaluation
+```bash
+# Test pretrained model
+python PolarSeg-master/test_pretrain_SemanticKITTI.py
+```
+
+### Custom Inference
+```bash
+# Standalone inference on custom .bin files
+python run_polarseg_easy.py --bin_dir ./shuju/mydata --output_dir ./shuju/predicted_labels
+
+# Quick inference script
+python quick_infer.py --bin_dir ./shuju/mydata --output_dir ./shuju/predicted_labels
+```
+
+## Architecture
+
+### Network Pipeline (ptBEV.py + BEV_Unet.py)
+1. **ptBEVnet** (network/ptBEV.py): Converts point cloud to Bird's Eye View representation
+   - PointNet-style feature extraction (9-dim for polar, 7-dim for traditional)
+   - Max pooling via torch_scatter to aggregate point features into grid cells
+   - Optional feature compression (compression_model parameter)
+
+2. **BEV_Unet** (network/BEV_Unet.py): 2D UNet that processes the BEV feature map
+   - 4 encoder/decoder layers with skip connections
+   - Circular padding option for seamless 360deg LiDAR scans (polar mode)
+   - DropBlock regularization
+
+### Data Pipeline (dataset.py)
+- **SemKITTI**: Loads raw .bin files (x,y,z,intensity) and .label files
+- **spherical_dataset**: Converts to polar coordinate grid (default for polar model)
+- **voxel_dataset**: Converts to cartesian voxel grid (for traditional model)
+- Both support augmentation: random rotation, flip
+
+### Key Hyperparameters
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| grid_size | [480,360,32] | BEV grid dimensions (width, height, z-bins) |
+| model | polar | polar (9-dim, circular padding) or traditional (7-dim) |
+| max_pt_per_encode | 256 | Max points per grid cell |
+| fea_compre | 32 | Feature compression dimension (z-bins) |
+
+## Data Format
+
+SemanticKITTI format expected in data/sequences/:
+```
+data/sequences/
+├── 00/
+│   ├── velodyne/  (x,y,z,intensity as float32 .bin files)
+│   └── labels/   (.label files, uint32 with semantics)
+├── 01/ ... 21/
+```
+
+## Dependencies
+- PyTorch >= 1.5.0
+- torch_scatter (for scatter_max pooling)
+- dropblock
+- numba >= 0.39.0
+- pyyaml, tqdm, scipy, plyfile
+
+## Label Mapping
+See semantic-kitti.yaml for the 20-class learning map. Classes 0 (unlabeled) and 1 (outlier) are ignored in mIoU calculation (unique_label excludes them).
